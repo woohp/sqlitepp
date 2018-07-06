@@ -1,11 +1,9 @@
 #include "sqlitepp.hpp"
 
-
 int main()
 {
     database db("test.db");
-    db.atomic([&]()
-    {
+    db.atomic([&]() {
         cout << "1\n";
         auto stmt = db.execute("select id, id * 2 from foo");
         cout << "2\n";
