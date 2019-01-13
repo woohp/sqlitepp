@@ -17,7 +17,7 @@ struct blob
     const T* data;
     const int size;
 
-    blob(const T* data, int size)
+    constexpr blob(const T* data, int size) noexcept
         : data(data)
         , size(size)
     {}
@@ -143,9 +143,9 @@ enum class openflags
     uri = SQLITE_OPEN_URI
 };
 
-openflags operator|(const openflags& a, const openflags& b)
+constexpr openflags operator|(const openflags& a, const openflags& b) noexcept
 {
-    return static_cast<openflags>(static_cast<int>(a) | static_cast<int>(b));
+    return static_cast<openflags>(static_cast<unsigned int>(a) | static_cast<unsigned int>(b));
 }
 
 class statement
@@ -159,11 +159,11 @@ class statement
     }
 
 public:
-    statement()
+    constexpr statement() noexcept
         : stmt(nullptr)
     {}
-    statement(const statement&) = delete;
-    statement(statement&& other)
+    constexpr statement(const statement&) noexcept = delete;
+    constexpr statement(statement&& other) noexcept
         : stmt(other.stmt)
     {
         other.stmt = nullptr;
@@ -278,7 +278,7 @@ public:
 
     database(const database&) = delete;
 
-    database(database&& other)
+    constexpr database(database&& other) noexcept
         : db(other.db)
         , transaction_id(other.transaction_id)
     {
