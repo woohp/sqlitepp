@@ -1,21 +1,23 @@
-#include <experimental/optional>
-#include <experimental/string_view>
+#include <optional>
+#include <string_view>
+#include <cstddef>
 #include <iostream>
 #include <random>
 #include <sqlite3.h>
 #include <string>
 #include <tuple>
 #include <utility>
-using namespace std;
+#include <vector>
 
 namespace sqlite
 {
+template <typename T = std::byte>
 struct blob
 {
-    const void* data;
+    const T* data;
     const int size;
 
-    blob(const void* data, int size)
+    blob(const T* data, int size)
         : data(data)
         , size(size)
     {}
@@ -61,31 +63,31 @@ struct loader<const char*>
 };
 
 template <>
-struct loader<string>
+struct loader<std::string>
 {
-    static string get(sqlite3_stmt* stmt, int index)
+    static std::string get(sqlite3_stmt* stmt, int index)
     {
         int length = sqlite3_column_bytes(stmt, index);
         auto str_ptr = reinterpret_cast<const char*>(sqlite3_column_text(stmt, index));
-        return string(str_ptr, length);
+        return std::string(str_ptr, length);
     }
 };
 
 template <>
-struct loader<std::experimental::string_view>
+struct loader<std::string_view>
 {
-    static std::experimental::string_view get(sqlite3_stmt* stmt, int index)
+    static std::string_view get(sqlite3_stmt* stmt, int index)
     {
         int length = sqlite3_column_bytes(stmt, index);
         auto str_ptr = reinterpret_cast<const char*>(sqlite3_column_text(stmt, index));
-        return std::experimental::string_view(str_ptr, length);
+        return std::string_view(str_ptr, length);
     }
 };
 
 template <typename T>
-struct loader<std::experimental::optional<T>>
+struct loader<std::optional<T>>
 {
-    static std::experimental::optional<T> get(sqlite3_stmt* stmt, int index)
+    static std::optional<T> get(sqlite3_stmt* stmt, int index)
     {
         if (sqlite3_column_type(stmt, index) == SQLITE_NULL)
             return {};
@@ -93,14 +95,37 @@ struct loader<std::experimental::optional<T>>
     }
 };
 
-template <>
-struct loader<blob>
+template <typename T>
+struct loader<blob<T>>
 {
-    static blob get(sqlite3_stmt* stmt, int index)
+    static blob<T> get(sqlite3_stmt* stmt, int index)
     {
         int length = sqlite3_column_bytes(stmt, index);
-        auto data_ptr = reinterpret_cast<const unsigned char*>(sqlite3_column_blob(stmt, index));
-        return blob(data_ptr, length);
+        if constexpr (!std::is_same_v<T, void>)
+            if (length % sizeof(T))
+                throw std::logic_error("size of blob is not divisible by size of type");
+
+        auto data_ptr = reinterpret_cast<const T*>(sqlite3_column_blob(stmt, index));
+
+        if constexpr (std::is_same_v<T, void>)
+            return blob<T>(data_ptr, length);
+        else
+            return blob<T>(data_ptr, length / sizeof(T));
+    }
+};
+
+template <typename T>
+struct loader<std::vector<T>>
+{
+    static std::vector<T> get(sqlite3_stmt* stmt, int index)
+    {
+        int length = sqlite3_column_bytes(stmt, index);
+        if (length % sizeof(T))
+            throw std::logic_error("size of blob is not divisible by size of type");
+        auto begin = reinterpret_cast<const char*>(sqlite3_column_blob(stmt, index));
+        auto end = begin + length;
+
+        return std::vector<T>(reinterpret_cast<const T*>(begin), reinterpret_cast<const T*>(end));
     }
 };
 
@@ -127,7 +152,7 @@ class statement
 {
     friend class database;
 
-    statement(sqlite3* db, const std::experimental::string_view sql)
+    statement(sqlite3* db, const std::string_view sql)
     {
         if (sqlite3_prepare_v2(db, sql.data(), sql.length(), &this->stmt, nullptr))
             throw std::exception();
@@ -179,12 +204,12 @@ public:
         sqlite3_bind_double(this->stmt, index + 1, item);
     }
 
-    void bind(int index, const std::experimental::string_view item) const
+    void bind(int index, const std::string_view item) const
     {
         sqlite3_bind_text(this->stmt, index + 1, item.data(), item.length(), nullptr);
     }
 
-    void bind(int index, nullptr_t) const
+    void bind(int index, std::nullptr_t) const
     {
         sqlite3_bind_null(this->stmt, index + 1);
     }
@@ -210,15 +235,15 @@ public:
     }
 
     template <typename... Args, std::size_t... I>
-    tuple<Args...> get_all_impl(tuple<Args...>&&, std::index_sequence<I...>) const
+    std::tuple<Args...> get_all_impl(std::tuple<Args...>&&, std::index_sequence<I...>) const
     {
-        return tuple<Args...>(loader<Args>::get(this->stmt, I)...);
+        return std::tuple<Args...>(loader<Args>::get(this->stmt, I)...);
     }
 
     template <typename... Args>
-    tuple<Args...> get_all() const
+    std::tuple<Args...> get_all() const
     {
-        return get_all_impl(tuple<Args...>{}, std::index_sequence_for<Args...>{});
+        return get_all_impl(std::tuple<Args...>{}, std::index_sequence_for<Args...>{});
     }
 
     bool step() const
@@ -245,7 +270,7 @@ class database
 {
 public:
     database() = delete;
-    database(const std::experimental::string_view filename, openflags flags = openflags::readwrite | openflags::create)
+    database(const std::string_view filename, openflags flags = openflags::readwrite | openflags::create)
     {
         if (sqlite3_open_v2(filename.data(), &this->db, static_cast<int>(flags), nullptr))
             throw std::invalid_argument("database file not found");
@@ -268,13 +293,13 @@ public:
 
     database& operator=(const database&) = delete;
 
-    statement prepare(const std::experimental::string_view sql) const
+    statement prepare(const std::string_view sql) const
     {
         return statement(this->db, sql);
     }
 
     template <typename... Args>
-    statement execute(const std::experimental::string_view sql, Args... args) const
+    statement execute(const std::string_view sql, Args... args) const
     {
         statement stmt = this->prepare(sql);
         stmt.reset();
@@ -285,10 +310,10 @@ public:
     template <typename F>
     void atomic(F&& func)
     {
-        string transaction_id = to_string(this->transaction_id++);
-        string begin_sql = "savepoint s" + transaction_id;
-        string rollback_sql = "rollback transaction to savepoint s" + transaction_id;
-        string commit_sql = "release savepoint s" + transaction_id;
+        std::string transaction_id = std::to_string(this->transaction_id++);
+        std::string begin_sql = "savepoint s" + transaction_id;
+        std::string rollback_sql = "rollback transaction to savepoint s" + transaction_id;
+        std::string commit_sql = "release savepoint s" + transaction_id;
 
         this->execute(begin_sql);
         try
