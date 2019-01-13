@@ -1,10 +1,10 @@
-#include <optional>
-#include <string_view>
 #include <cstddef>
 #include <iostream>
+#include <optional>
 #include <random>
 #include <sqlite3.h>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -225,7 +225,7 @@ public:
     template <typename... Args>
     void bind_multiple(Args&&... args) const
     {
-        bind_multiple_impl(std::index_sequence_for<Args...>{}, std::forward<Args>(args)...);
+        bind_multiple_impl(std::index_sequence_for<Args...> {}, std::forward<Args>(args)...);
     }
 
     template <int Index, typename T>
@@ -243,7 +243,7 @@ public:
     template <typename... Args>
     std::tuple<Args...> get_all() const
     {
-        return get_all_impl(std::tuple<Args...>{}, std::index_sequence_for<Args...>{});
+        return get_all_impl(std::tuple<Args...> {}, std::index_sequence_for<Args...> {});
     }
 
     bool step() const
