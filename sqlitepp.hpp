@@ -27,18 +27,18 @@ template <typename>
 struct loader;
 
 template <>
-struct loader<int>
+struct loader<std::int32_t>
 {
-    static int get(sqlite3_stmt* stmt, int index)
+    static std::int32_t get(sqlite3_stmt* stmt, int index)
     {
         return sqlite3_column_int(stmt, index);
     }
 };
 
 template <>
-struct loader<long long>
+struct loader<std::int64_t>
 {
-    static long long get(sqlite3_stmt* stmt, int index)
+    static std::int64_t get(sqlite3_stmt* stmt, int index)
     {
         return sqlite3_column_int64(stmt, index);
     }
@@ -189,12 +189,12 @@ public:
         sqlite3_reset(this->stmt);
     }
 
-    void bind(int index, int item) const
+    void bind(int index, std::int32_t item) const
     {
         sqlite3_bind_int(this->stmt, index + 1, item);
     }
 
-    void bind(int index, long long item) const
+    void bind(int index, std::int64_t item) const
     {
         sqlite3_bind_int64(this->stmt, index + 1, item);
     }
